@@ -47,10 +47,13 @@ class Transcriber:
             # 執行語音辨識
             RawSegments, Info = self._Model.transcribe(
                 WavPath,
-                language="ja",          # 強制日文，避免誤判語言
+                language="ja",               # 強制日文，避免誤判語言
                 beam_size=5,
-                vad_filter=True,        # 靜音偵測過濾，減少幻覺輸出
-                vad_parameters={"min_silence_duration_ms": 500}
+                vad_filter=True,             # 靜音偵測過濾，減少幻覺輸出
+                vad_parameters={"min_silence_duration_ms": 500},
+                condition_on_previous_text=False,  # 關閉前文關聯，避免幻覺連鎖
+                log_prob_threshold=-1.0,     # 低信心段落門檻（預設 -1.0）
+                no_speech_threshold=0.6      # no_speech_prob 超過此值即捨棄
             )
 
             # 使用 Info 中的時長（較準確）
@@ -66,12 +69,21 @@ class Transcriber:
                 if StopCheck and StopCheck():
                     break
 
+                # 過濾幻覺段落：no_speech_prob 高代表該段可能是靜音或雜訊
+                if hasattr(RawSeg, 'no_speech_prob') and RawSeg.no_speech_prob > 0.6:
+                    continue
+
+                # 過濾空白或過短（少於2字元）的辨識結果
+                CleanText = RawSeg.text.strip()
+                if not CleanText or len(CleanText) < 2:
+                    continue
+
                 Idx += 1
                 Result.append({
                     "Index": Idx,
                     "Start": RawSeg.start,
                     "End": RawSeg.end,
-                    "JaText": RawSeg.text.strip()
+                    "JaText": CleanText
                 })
 
                 # 回報進度

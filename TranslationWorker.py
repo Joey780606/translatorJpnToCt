@@ -86,25 +86,34 @@ class TranslationWorker(QThread):
             TranslatorInstance = Translator()
             Total = len(Segments)
 
-            for i, Seg in enumerate(Segments):
+            # 收集所有日文文字，進行批次翻譯（減少 API 呼叫與限流風險）
+            JaTexts = [Seg["JaText"] for Seg in Segments]
+
+            def OnBatchProgress(DoneCount, TotalCount):
+                """批次翻譯進度回調"""
                 if self._StopRequested:
-                    self._Cleanup(TempWavPath)
-                    self.Stopped.emit()
                     return
+                Pct = 60 + int((DoneCount / TotalCount) * 35)
+                self.ProgressUpdated.emit(
+                    min(Pct, 94),
+                    f"翻譯中 {DoneCount} / {TotalCount}..."
+                )
 
-                # 執行翻譯
-                Seg["ZhText"] = TranslatorInstance.Translate(Seg["JaText"])
+            ZhTexts = TranslatorInstance.TranslateBatch(
+                JaTexts,
+                ProgressCallback=OnBatchProgress
+            )
 
-                # 發出此段字幕供 TEdit 即時顯示
+            if self._StopRequested:
+                self._Cleanup(TempWavPath)
+                self.Stopped.emit()
+                return
+
+            # 將翻譯結果回填並逐段發出供即時顯示
+            for i, Seg in enumerate(Segments):
+                Seg["ZhText"] = ZhTexts[i] if i < len(ZhTexts) else Seg["JaText"]
                 ChunkText = SrtBuilder.FormatChunk(Seg)
                 self.SubtitleChunkReady.emit(ChunkText)
-
-                # 更新進度
-                Pct = 60 + int(((i + 1) / Total) * 35)
-                self.ProgressUpdated.emit(
-                    Pct,
-                    f"翻譯中 {i + 1} / {Total}..."
-                )
 
             # ── 階段 4：組建 SRT (95→100%) ───────────────────────────
             self.ProgressUpdated.emit(95, "正在組建字幕檔...")
