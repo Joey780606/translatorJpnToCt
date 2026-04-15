@@ -23,9 +23,10 @@ class TranslationWorker(QThread):
     # 使用者停止 Signal
     Stopped = Signal()
 
-    def __init__(self, VideoPath: str):
+    def __init__(self, VideoPath: str, ApiKey: str = ""):
         super().__init__()
         self._VideoPath = VideoPath
+        self._ApiKey = ApiKey          # Anthropic API 金鑰
         self._StopRequested = False    # 協作式停止旗標
 
     def RequestStop(self):
@@ -83,7 +84,7 @@ class TranslationWorker(QThread):
             self.ProgressUpdated.emit(60, f"語音辨識完成，共 {len(Segments)} 段，準備翻譯...")
 
             # ── 階段 3：翻譯 (60→95%) ────────────────────────────────
-            TranslatorInstance = Translator()
+            TranslatorInstance = Translator(ApiKey=self._ApiKey)
             Total = len(Segments)
 
             # 收集所有日文文字，進行批次翻譯（減少 API 呼叫與限流風險）

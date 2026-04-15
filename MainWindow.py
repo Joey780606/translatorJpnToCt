@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from TranslationWorker import TranslationWorker
 
@@ -31,6 +32,21 @@ class MainWindow(QMainWindow):
         MainLayout = QVBoxLayout(CentralWidget)
         MainLayout.setSpacing(8)
         MainLayout.setContentsMargins(12, 12, 12, 12)
+
+        # ── API 金鑰列 ─────────────────────────────────────────────
+        ApiKeyLayout = QHBoxLayout()
+        LblApiKey = QLabel("API 金鑰：")
+        LblApiKey.setFixedWidth(70)
+        self.LEApiKey = QLineEdit()
+        self.LEApiKey.setPlaceholderText("輸入 Anthropic API 金鑰（選填，有填則使用 Claude 高品質翻譯，無則使用 Google 翻譯）")
+        self.LEApiKey.setEchoMode(QLineEdit.EchoMode.Password)  # 隱藏顯示保護安全
+        # 若環境變數已設定則自動填入
+        EnvKey = os.environ.get("ANTHROPIC_API_KEY", "")
+        if EnvKey:
+            self.LEApiKey.setText(EnvKey)
+        ApiKeyLayout.addWidget(LblApiKey)
+        ApiKeyLayout.addWidget(self.LEApiKey)
+        MainLayout.addLayout(ApiKeyLayout)
 
         # ── Row 0：檔案選取列 ───────────────────────────────────────
         Row0Layout = QHBoxLayout()
@@ -117,8 +133,8 @@ class MainWindow(QMainWindow):
             self._SrtContent = ""
             self.PBtnSave.setEnabled(False)
 
-            # 建立並啟動工作執行緒
-            self._Worker = TranslationWorker(VideoPath)
+            # 建立並啟動工作執行緒（傳入 API 金鑰）
+            self._Worker = TranslationWorker(VideoPath, ApiKey=self.LEApiKey.text().strip())
             self._Worker.ProgressUpdated.connect(self.SlotProgressUpdated)
             self._Worker.SubtitleChunkReady.connect(self.SlotSubtitleChunkReady)
             self._Worker.Finished.connect(self.SlotFinished)
