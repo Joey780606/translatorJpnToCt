@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 from TranslationWorker import TranslationWorker
+from Translator import Translator
 
 
 class MainWindow(QMainWindow):
@@ -127,6 +128,30 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "警告", f"找不到檔案:\n{VideoPath}")
                 return
 
+            # ── 驗證 API 金鑰（若有填寫）──────────────────────────
+            ApiKey = self.LEApiKey.text().strip()
+            if ApiKey:
+                self.LblProgress.setText("正在驗證 API 金鑰...")
+                self.PBtnTranslation.setEnabled(False)
+                # 同步驗證（網路呼叫，通常不到 1 秒）
+                IsValid, ErrMsg = Translator.CheckApiKey(ApiKey)
+                self.PBtnTranslation.setEnabled(True)
+                if not IsValid:
+                    Reply = QMessageBox.question(
+                        self,
+                        "API 金鑰錯誤",
+                        f"金鑰不正確！\n（原因：{ErrMsg}）\n\n要改由 Google Translate 翻譯嗎？",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if Reply == QMessageBox.StandardButton.Yes:
+                        # 清除金鑰，後續自動退回 Google Translate
+                        self.LEApiKey.clear()
+                        ApiKey = ""
+                    else:
+                        self.LblProgress.setText("請修正 API 金鑰後再試。")
+                        return
+
             # 清除前次結果
             self.TEdit.clear()
             self.QPBar.setValue(0)
@@ -134,7 +159,7 @@ class MainWindow(QMainWindow):
             self.PBtnSave.setEnabled(False)
 
             # 建立並啟動工作執行緒（傳入 API 金鑰）
-            self._Worker = TranslationWorker(VideoPath, ApiKey=self.LEApiKey.text().strip())
+            self._Worker = TranslationWorker(VideoPath, ApiKey=ApiKey)
             self._Worker.ProgressUpdated.connect(self.SlotProgressUpdated)
             self._Worker.SubtitleChunkReady.connect(self.SlotSubtitleChunkReady)
             self._Worker.Finished.connect(self.SlotFinished)

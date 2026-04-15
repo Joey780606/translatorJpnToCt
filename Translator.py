@@ -27,6 +27,32 @@ class Translator:
         "- 只輸出 JSON，不要任何說明文字或 markdown 格式"
     )
 
+    @staticmethod
+    def CheckApiKey(ApiKey: str) -> tuple:
+        """
+        驗證 Anthropic API 金鑰是否有效。
+        回傳 (True, "") 表示有效；(False, 錯誤訊息) 表示無效。
+        以最小請求（1 token）測試，成本極低。
+        """
+        if not ApiKey or not ApiKey.strip():
+            return False, "API 金鑰為空"
+        try:
+            import anthropic
+        except ImportError:
+            return False, "找不到 anthropic 套件，請執行：pip install anthropic"
+        try:
+            Client = anthropic.Anthropic(api_key=ApiKey.strip())
+            Client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=1,
+                messages=[{"role": "user", "content": "hi"}]
+            )
+            return True, ""
+        except anthropic.AuthenticationError:
+            return False, "API 金鑰無效或已過期"
+        except Exception as E:
+            return False, str(E)
+
     def __init__(self, ApiKey: str = ""):
         self._Client = None
         # 優先使用傳入的金鑰，其次讀取環境變數
