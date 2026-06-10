@@ -141,6 +141,42 @@ class Translator:
         # 長度不符時回傳原文，保留時間軸完整性
         return list(Texts)
 
+    def TranslateSingleBatch(self, Texts: list) -> list:
+        """
+        翻譯單一批次並立即回傳（含重試）。
+        供 TranslationWorker 逐批呼叫，讓字幕可以即時顯示，不必等全部完成。
+        """
+        if not Texts:
+            return []
+
+        # 無 API 金鑰：Google Translate 逐段翻譯
+        if not self._HasApiKey():
+            Results = []
+            for Text in Texts:
+                if Text and Text.strip():
+                    Results.append(self._TranslateWithGoogle(Text))
+                else:
+                    Results.append(Text)
+                time.sleep(0.3)  # 避免 Google 限流
+            return Results
+
+        # Claude：批次翻譯，含指數退避重試
+        if self._Client is None:
+            self._LoadClient()
+
+        for Attempt in range(3):
+            try:
+                return self._CallClaude(Texts)
+            except json.JSONDecodeError:
+                if Attempt < 2:
+                    time.sleep(1)
+            except Exception:
+                if Attempt < 2:
+                    time.sleep(2 ** Attempt)
+
+        # 全部失敗，降級為逐段翻譯
+        return [self.Translate(Text) for Text in Texts]
+
     def Translate(self, JaText: str) -> str:
         """
         翻譯單一段落（供外部直接呼叫的介面）。

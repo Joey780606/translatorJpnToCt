@@ -20,6 +20,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._Worker = None          # 目前的翻譯工作執行緒
         self._SrtContent = ""        # 翻譯完成的 SRT 字串
+        self._IsSaved = True         # 翻譯結果是否已存檔
         self._SetupUi()
 
     def _SetupUi(self):
@@ -192,6 +193,7 @@ class MainWindow(QMainWindow):
             # utf-8-sig 含 BOM，確保 Windows 媒體播放器正確顯示中文
             with open(SrtPath, "w", encoding="utf-8-sig") as F:
                 F.write(self._SrtContent)
+            self._IsSaved = True
             QMessageBox.information(
                 self, "存檔成功",
                 f"字幕已成功儲存至:\n{SrtPath}"
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow):
     def SlotFinished(self, SrtContent: str):
         """翻譯全部完成的處理"""
         self._SrtContent = SrtContent
+        self._IsSaved = False        # 新翻譯結果尚未存檔
         self.PBtnTranslation.setText("進行翻譯")
         self.PBtnTranslation.setEnabled(True)
         self.PBtnFile.setEnabled(True)
@@ -243,3 +246,49 @@ class MainWindow(QMainWindow):
         self.PBtnFile.setEnabled(True)
         self.LEPath.setEnabled(True)
         self.LblProgress.setText("已停止翻譯。")
+
+    def closeEvent(self, Event):
+        """關閉視窗時，若翻譯進行中或有未存檔結果，詢問使用者"""
+        # 翻譯進行中，詢問是否確認關閉
+        if self._Worker and self._Worker.isRunning():
+            Reply = QMessageBox.question(
+                self,
+                "翻譯進行中",
+                "翻譯尚未完成，確定要關閉程式嗎？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if Reply == QMessageBox.StandardButton.No:
+                Event.ignore()
+                return
+            self._Worker.RequestStop()
+            self._Worker.wait()
+
+        # 有未存檔的翻譯結果，詢問是否存檔
+        if self._SrtContent and not self._IsSaved:
+            Reply = QMessageBox.question(
+                self,
+                "尚未存檔",
+                "翻譯結果尚未存檔，是否要在關閉前存檔？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Yes
+            )
+            if Reply == QMessageBox.StandardButton.Cancel:
+                Event.ignore()
+                return
+            if Reply == QMessageBox.StandardButton.Yes:
+                self.SlotSaveFile()
+                # 存檔失敗時再次詢問是否仍要關閉
+                if not self._IsSaved:
+                    Reply2 = QMessageBox.question(
+                        self,
+                        "存檔失敗",
+                        "存檔失敗，仍要關閉程式嗎？",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if Reply2 == QMessageBox.StandardButton.No:
+                        Event.ignore()
+                        return
+
+        Event.accept()

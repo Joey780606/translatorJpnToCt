@@ -69,8 +69,9 @@ class Transcriber:
                 if StopCheck and StopCheck():
                     break
 
-                # 過濾幻覺段落：no_speech_prob 高代表該段可能是靜音或雜訊
-                if hasattr(RawSeg, 'no_speech_prob') and RawSeg.no_speech_prob > 0.6:
+                # 過濾幻覺段落：門檻設 0.85，避免背景音樂場景的真實語音被誤刪
+                # （0.6 太激進，有配樂的對話 no_speech_prob 常落在 0.6-0.8 之間）
+                if hasattr(RawSeg, 'no_speech_prob') and RawSeg.no_speech_prob > 0.85:
                     continue
 
                 # 過濾空白或過短（少於2字元）的辨識結果

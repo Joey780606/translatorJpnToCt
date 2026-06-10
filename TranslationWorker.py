@@ -1,6 +1,7 @@
 # 翻譯工作執行緒：在背景執行音訊擷取、語音辨識、翻譯的完整流程
 
 import os
+import time
 from PySide6.QtCore import QThread, Signal
 
 from AudioExtractor import AudioExtractor
@@ -86,35 +87,38 @@ class TranslationWorker(QThread):
             # ── 階段 3：翻譯 (60→95%) ────────────────────────────────
             TranslatorInstance = Translator(ApiKey=self._ApiKey)
             Total = len(Segments)
+            BatchSize = Translator._BatchSize
 
-            # 收集所有日文文字，進行批次翻譯（減少 API 呼叫與限流風險）
-            JaTexts = [Seg["JaText"] for Seg in Segments]
-
-            def OnBatchProgress(DoneCount, TotalCount):
-                """批次翻譯進度回調"""
+            # 逐批翻譯並立即顯示，讓使用者可以即時看到字幕（不必等全部完成）
+            for BatchStart in range(0, Total, BatchSize):
                 if self._StopRequested:
+                    self._Cleanup(TempWavPath)
+                    self.Stopped.emit()
                     return
-                Pct = 60 + int((DoneCount / TotalCount) * 35)
+
+                BatchEnd = min(BatchStart + BatchSize, Total)
+                BatchSegs = Segments[BatchStart:BatchEnd]
+                JaBatch = [Seg["JaText"] for Seg in BatchSegs]
+
+                # 翻譯這一批
+                ZhBatch = TranslatorInstance.TranslateSingleBatch(JaBatch)
+
+                # 即時發出這批字幕供 TEdit 顯示
+                for i, Seg in enumerate(BatchSegs):
+                    Seg["ZhText"] = ZhBatch[i] if i < len(ZhBatch) else Seg["JaText"]
+                    ChunkText = SrtBuilder.FormatChunk(Seg)
+                    self.SubtitleChunkReady.emit(ChunkText)
+
+                # 更新進度
+                Pct = 60 + int((BatchEnd / Total) * 35)
                 self.ProgressUpdated.emit(
                     min(Pct, 94),
-                    f"翻譯中 {DoneCount} / {TotalCount}..."
+                    f"翻譯中 {BatchEnd} / {Total}..."
                 )
 
-            ZhTexts = TranslatorInstance.TranslateBatch(
-                JaTexts,
-                ProgressCallback=OnBatchProgress
-            )
-
-            if self._StopRequested:
-                self._Cleanup(TempWavPath)
-                self.Stopped.emit()
-                return
-
-            # 將翻譯結果回填並逐段發出供即時顯示
-            for i, Seg in enumerate(Segments):
-                Seg["ZhText"] = ZhTexts[i] if i < len(ZhTexts) else Seg["JaText"]
-                ChunkText = SrtBuilder.FormatChunk(Seg)
-                self.SubtitleChunkReady.emit(ChunkText)
+                # 批次間稍作停頓（Claude 路徑）
+                if BatchEnd < Total and self._ApiKey:
+                    time.sleep(0.2)
 
             # ── 階段 4：組建 SRT (95→100%) ───────────────────────────
             self.ProgressUpdated.emit(95, "正在組建字幕檔...")
